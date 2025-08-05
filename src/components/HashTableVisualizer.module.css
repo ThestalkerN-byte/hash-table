@@ -1,0 +1,368 @@
+.hashTableVisualizer {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.hashTableVisualizer h1 {
+  text-align: center;
+  color: #2c3e50;
+  margin-bottom: 30px;
+  font-size: 2.5rem;
+  font-weight: 700;
+}
+
+/* Mensajes */
+.message {
+  padding: 12px 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-weight: 500;
+  animation: slideIn 0.3s ease;
+}
+
+.message.success {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.message.error {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+.message.info {
+  background-color: #d1ecf1;
+  color: #0c5460;
+  border: 1px solid #bee5eb;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Panel de control */
+.controlPanel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.controlSection {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e1e8ed;
+}
+
+.controlSection h3 {
+  margin: 0 0 15px 0;
+  color: #2c3e50;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.inputGroup {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.inputGroup input {
+  flex: 1;
+  min-width: 120px;
+  padding: 10px 12px;
+  border: 2px solid #e1e8ed;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: border-color 0.3s ease;
+}
+
+.inputGroup input:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+/* Botones */
+.btnPrimary, .btnSecondary, .btnDanger, .btnWarning {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+  min-width: 100px;
+}
+
+.btnPrimary {
+  background-color: #3498db;
+  color: white;
+}
+
+.btnPrimary:hover {
+  background-color: #2980b9;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
+}
+
+.btnSecondary {
+  background-color: #95a5a6;
+  color: white;
+}
+
+.btnSecondary:hover {
+  background-color: #7f8c8d;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(149, 165, 166, 0.3);
+}
+
+.btnDanger {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.btnDanger:hover {
+  background-color: #c0392b;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(231, 76, 60, 0.3);
+}
+
+.btnWarning {
+  background-color: #f39c12;
+  color: white;
+}
+
+.btnWarning:hover {
+  background-color: #e67e22;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(243, 156, 18, 0.3);
+}
+
+/* Resultado de búsqueda */
+.searchResult {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  border-left: 4px solid #28a745;
+}
+
+/* Grupo de botones */
+.buttonGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stats {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #6c757d;
+}
+
+/* Visualización de la Hash Table */
+.hashTableDisplay {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 30px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e1e8ed;
+}
+
+.hashTableDisplay h3 {
+  margin: 0 0 20px 0;
+  color: #2c3e50;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.bucketsContainer {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.bucket {
+  border: 2px solid #e1e8ed;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.bucket:hover {
+  border-color: #3498db;
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.2);
+}
+
+.bucketHeader {
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: white;
+  padding: 12px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.bucketItems {
+  padding: 10px;
+  min-height: 60px;
+}
+
+.emptyBucket {
+  text-align: center;
+  color: #95a5a6;
+  font-style: italic;
+  padding: 20px 0;
+}
+
+.bucketItem {
+  background: #f8f9fa;
+  border: 1px solid #e1e8ed;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  transition: all 0.3s ease;
+}
+
+.bucketItem:hover {
+  background: #e3f2fd;
+  border-color: #3498db;
+  transform: translateX(5px);
+}
+
+.bucketItem:last-child {
+  margin-bottom: 0;
+}
+
+.itemKey {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.itemValue {
+  color: #6c757d;
+  font-size: 13px;
+}
+
+/* Panel de información */
+.infoPanel {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e1e8ed;
+}
+
+.infoPanel h3 {
+  margin: 0 0 15px 0;
+  color: #2c3e50;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.infoPanel ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.infoPanel li {
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f3f4;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.infoPanel li:last-child {
+  border-bottom: none;
+}
+
+.infoPanel strong {
+  color: #2c3e50;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .hashTableVisualizer {
+    padding: 10px;
+  }
+  
+  .hashTableVisualizer h1 {
+    font-size: 2rem;
+  }
+  
+  .controlPanel {
+    grid-template-columns: 1fr;
+  }
+  
+  .bucketsContainer {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  
+  .inputGroup {
+    flex-direction: column;
+  }
+  
+  .inputGroup input {
+    min-width: auto;
+  }
+  
+  .stats {
+    flex-direction: column;
+    gap: 5px;
+  }
+}
+
+/* Animaciones adicionales */
+.bucket {
+  animation: fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.bucketItem {
+  animation: slideInRight 0.3s ease;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+} 
