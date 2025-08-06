@@ -20,7 +20,7 @@ interface BucketItem {
   key: string;
   value: string;
   deleted?: boolean;
-  next?: number;
+  next?: number | null;
 }
 
 interface Bucket {
@@ -121,7 +121,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
   // Actualizar estadísticas cuando cambie la tabla
   useEffect(() => {
     console.log(`[UI] Hash table changed, updating stats.`);
-    const dump = hashTable.dump();
+    const dump = hashTable.dump() as DebugInfo;
     const totalEntries = dump.buckets.reduce((sum: number, bucket: Array<{deleted?: boolean}>) => 
       sum + bucket.filter((entry: {deleted?: boolean}) => !entry.deleted).length, 0);
     const overflowEntries = dump.overflow.filter((entry: {deleted?: boolean} | null) => entry && !entry.deleted).length;
@@ -142,7 +142,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
 
   // Función para generar buckets visuales
   const generateBuckets = (): Bucket[] => {
-    const dump = hashTable.dump();
+    const dump = hashTable.dump() as DebugInfo;
     const buckets: Bucket[] = [];
     
     // Crear buckets vacíos usando la capacidad real de la tabla hash
@@ -155,13 +155,13 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
     }
     
     // Distribuir elementos en buckets según el dump
-    dump.buckets.forEach((bucketEntries: Array<{key: unknown, value: unknown, deleted?: boolean, next?: number}>, index: number) => {
+    dump.buckets.forEach((bucketEntries: Array<{key: string, value: string, deleted: boolean, next: number | null}>, index: number) => {
       if (index < buckets.length) {
         // Agregar elementos principales del bucket (no borrados)
-        bucketEntries.filter((entry: {deleted?: boolean}) => !entry.deleted).forEach((entry: {key: unknown, value: unknown, deleted?: boolean, next?: number}) => {
+        bucketEntries.filter((entry: {deleted: boolean}) => !entry.deleted).forEach((entry: {key: string, value: string, deleted: boolean, next: number | null}) => {
           buckets[index].items.push({ 
-            key: String(entry.key), 
-            value: String(entry.value),
+            key: entry.key, 
+            value: entry.value,
             deleted: entry.deleted,
             next: entry.next
           });
@@ -171,10 +171,10 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
     
     // Agregar elementos del área de overflow separada
     const overflowItems = dump.overflow
-      .filter((entry: {key: unknown, value: unknown, deleted?: boolean} | null) => entry && !entry.deleted)
-      .map((entry: {key: unknown, value: unknown, deleted?: boolean} | null) => ({
-        key: String(entry!.key),
-        value: String(entry!.value),
+      .filter((entry: {key: string, value: string, deleted: boolean} | null) => entry && !entry.deleted)
+      .map((entry: {key: string, value: string, deleted: boolean} | null) => ({
+        key: entry!.key,
+        value: entry!.value,
         deleted: entry!.deleted
       }));
     
@@ -196,7 +196,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
   const getBucketIndexForVisualization = (key: string): number => {
     const keyString = String(key);
     const hash = simpleHash(keyString);
-    return hash % hashTable.dump().numBuckets;
+    return hash % (hashTable.dump() as DebugInfo).numBuckets;
   };
 
   const handleInsert = () => {
@@ -304,17 +304,18 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
 
     const primaryHash = simpleHash(hashKey.trim());
     const secondaryHashValue = secondaryHash(hashKey.trim());
-    const bucketIndex = primaryHash % hashTable.dump().numBuckets;
+    const dump = hashTable.dump() as DebugInfo;
+    const bucketIndex = primaryHash % dump.numBuckets;
     
     // Generar secuencia de probing
     const probeSequence = [];
-    for (let i = 0; i < hashTable.dump().numBuckets; i++) {
+    for (let i = 0; i < dump.numBuckets; i++) {
       if (selectedMethod === CollisionStrategy.DOUBLE_HASHING) {
-        const h2 = secondaryHashValue % hashTable.dump().numBuckets;
+        const h2 = secondaryHashValue % dump.numBuckets;
         const adjustedH2 = h2 === 0 ? 1 : h2;
-        probeSequence.push((primaryHash + i * adjustedH2) % hashTable.dump().numBuckets);
+        probeSequence.push((primaryHash + i * adjustedH2) % dump.numBuckets);
       } else {
-        probeSequence.push((primaryHash + i) % hashTable.dump().numBuckets);
+        probeSequence.push((primaryHash + i) % dump.numBuckets);
       }
     }
 
@@ -381,8 +382,9 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
     // Usar la función hash forzada para ambas claves
     const hash1 = forcedHash(forceCollisionKey1.trim());
     const hash2 = forcedHash(forceCollisionKey2.trim());
-    const bucket1 = hash1 % hashTable.dump().numBuckets;
-    const bucket2 = hash2 % hashTable.dump().numBuckets;
+    const currentDump = hashTable.dump() as DebugInfo;
+    const bucket1 = hash1 % currentDump.numBuckets;
+    const bucket2 = hash2 % currentDump.numBuckets;
     
     console.log(`[FORCE_COLLISION] Clave 1: "${forceCollisionKey1}" -> Hash: ${hash1} -> Bucket: ${bucket1}`);
     console.log(`[FORCE_COLLISION] Clave 2: "${forceCollisionKey2}" -> Hash: ${hash2} -> Bucket: ${bucket2}`);
@@ -390,8 +392,8 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
     
     // Crear una nueva tabla hash con la función hash forzada y actualizar la tabla principal
     const newHashTable = new StaticHashTable<string, string>({
-      numBuckets: hashTable.dump().numBuckets,
-      bucketCapacity: hashTable.dump().bucketCapacity,
+      numBuckets: currentDump.numBuckets,
+      bucketCapacity: currentDump.bucketCapacity,
       primaryHash: forcedHash,
       secondaryHash: secondaryHash,
       strategy: selectedMethod
@@ -408,12 +410,12 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
     setHashTable(newHashTable);
 
     // Mostrar el estado final de la tabla
-    const dump = newHashTable.dump();
+    const finalDump = newHashTable.dump() as DebugInfo;
     console.log(`[FORCE_COLLISION] Estado final de la tabla:`);
-    console.log(`[FORCE_COLLISION] - Buckets: ${dump.numBuckets}`);
-    console.log(`[FORCE_COLLISION] - Capacidad por bucket: ${dump.bucketCapacity}`);
-    console.log(`[FORCE_COLLISION] - Elementos en bucket 0: ${dump.buckets[0]?.length || 0}`);
-    console.log(`[FORCE_COLLISION] - Elementos en overflow: ${dump.overflow.filter((entry: {deleted?: boolean} | null) => entry !== null).length}`);
+    console.log(`[FORCE_COLLISION] - Buckets: ${finalDump.numBuckets}`);
+    console.log(`[FORCE_COLLISION] - Capacidad por bucket: ${finalDump.bucketCapacity}`);
+    console.log(`[FORCE_COLLISION] - Elementos en bucket 0: ${finalDump.buckets[0]?.length || 0}`);
+    console.log(`[FORCE_COLLISION] - Elementos en overflow: ${finalDump.overflow.filter((entry: {deleted?: boolean} | null) => entry !== null).length}`);
 
     if (bucket1 === bucket2) {
       showMessage(`¡Colisión forzada exitosa! Ambas claves van al bucket ${bucket1}. Método de resolución: ${getMethodDisplayName(selectedMethod)}`, 'success');
@@ -462,9 +464,9 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
 
     console.log(`[CONFIG] Tabla hash creada exitosamente`);
     console.log(`[CONFIG] Verificando configuración aplicada:`);
-    const dump = newHashTable.dump();
-    console.log(`[CONFIG] - Tamaño de buckets: ${dump.numBuckets}`);
-    console.log(`[CONFIG] - Método: ${dump.strategy}`);
+    const configDump = newHashTable.dump() as DebugInfo;
+    console.log(`[CONFIG] - Tamaño de buckets: ${configDump.numBuckets}`);
+    console.log(`[CONFIG] - Método: ${configDump.strategy}`);
     console.log(`=== FIN CONFIGURACIÓN ===\n`);
 
     showMessage(`Tabla hash reconfigurada: ${bucketCount} buckets con capacidad de ${bucketCapacity} elementos por bucket`, 'success');
