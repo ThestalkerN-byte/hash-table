@@ -97,7 +97,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
       strategy: CollisionStrategy.LINEAR_PROBING
     })
   );
-  
+
   const [keyInput, setKeyInput] = useState('');
   const [valueInput, setValueInput] = useState('');
   const [searchKey, setSearchKey] = useState('');
@@ -122,21 +122,21 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
   useEffect(() => {
     console.log(`[UI] Hash table changed, updating stats.`);
     const dump = hashTable.dump() as DebugInfo;
-    const totalEntries = dump.buckets.reduce((sum: number, bucket: Array<{deleted?: boolean}>) => 
-      sum + bucket.filter((entry: {deleted?: boolean}) => !entry.deleted).length, 0);
-    const overflowEntries = dump.overflow.filter((entry: {deleted?: boolean} | null) => entry && !entry.deleted).length;
-    
+    const totalEntries = dump.buckets.reduce((sum: number, bucket: Array<{ deleted?: boolean }>) =>
+      sum + bucket.filter((entry: { deleted?: boolean }) => !entry.deleted).length, 0);
+    const overflowEntries = dump.overflow.filter((entry: { deleted?: boolean } | null) => entry && !entry.deleted).length;
+
     setStats({
       size: totalEntries,
       capacity: dump.numBuckets,
       loadFactor: totalEntries / (dump.numBuckets * dump.bucketCapacity),
       method: dump.strategy,
-      buckets: dump.buckets.map((bucket: Array<{deleted?: boolean}>) => ({
-        entries: bucket.filter((entry: {deleted?: boolean}) => !entry.deleted).length,
+      buckets: dump.buckets.map((bucket: Array<{ deleted?: boolean }>) => ({
+        entries: bucket.filter((entry: { deleted?: boolean }) => !entry.deleted).length,
         overflowEntries: 0 // Los overflow están en el área separada
       }))
     });
-    
+
     setDebugInfo(dump);
   }, [hashTable]);
 
@@ -144,23 +144,23 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
   const generateBuckets = (): Bucket[] => {
     const dump = hashTable.dump() as DebugInfo;
     const buckets: Bucket[] = [];
-    
+
     // Crear buckets vacíos usando la capacidad real de la tabla hash
     for (let i = 0; i < dump.numBuckets; i++) {
-      buckets.push({ 
-        index: i, 
+      buckets.push({
+        index: i,
         items: [],
         overflowItems: []
       });
     }
-    
+
     // Distribuir elementos en buckets según el dump
-    dump.buckets.forEach((bucketEntries: Array<{key: string, value: string, deleted: boolean, next: number | null}>, index: number) => {
+    dump.buckets.forEach((bucketEntries: Array<{ key: string, value: string, deleted: boolean, next: number | null }>, index: number) => {
       if (index < buckets.length) {
         // Agregar elementos principales del bucket (no borrados)
-        bucketEntries.filter((entry: {deleted: boolean}) => !entry.deleted).forEach((entry: {key: string, value: string, deleted: boolean, next: number | null}) => {
-          buckets[index].items.push({ 
-            key: entry.key, 
+        bucketEntries.filter((entry: { deleted: boolean }) => !entry.deleted).forEach((entry: { key: string, value: string, deleted: boolean, next: number | null }) => {
+          buckets[index].items.push({
+            key: entry.key,
             value: entry.value,
             deleted: entry.deleted,
             next: entry.next
@@ -168,27 +168,27 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
         });
       }
     });
-    
+
     // Agregar elementos del área de overflow separada
     const overflowItems = dump.overflow
-      .filter((entry: {key: string, value: string, deleted: boolean} | null) => entry && !entry.deleted)
-      .map((entry: {key: string, value: string, deleted: boolean} | null) => ({
+      .filter((entry: { key: string, value: string, deleted: boolean } | null) => entry && !entry.deleted)
+      .map((entry: { key: string, value: string, deleted: boolean } | null) => ({
         key: entry!.key,
         value: entry!.value,
         deleted: entry!.deleted
       }));
-    
+
     // Para simplificar, agregamos los overflow items al primer bucket
     // En una implementación más compleja, podrías mapear overflow items a buckets específicos
     if (overflowItems.length > 0 && buckets.length > 0) {
       buckets[0].overflowItems = overflowItems;
     }
-    
+
     console.log(`[GENERATE_BUCKETS] Generando buckets para visualización:`);
     console.log(`[GENERATE_BUCKETS] - Total buckets: ${buckets.length}`);
     console.log(`[GENERATE_BUCKETS] - Elementos en buckets principales: ${buckets.reduce((sum, b) => sum + b.items.length, 0)}`);
     console.log(`[GENERATE_BUCKETS] - Elementos en overflow: ${overflowItems.length}`);
-    
+
     return buckets;
   };
 
@@ -262,7 +262,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
   const handleMethodChange = (method: CollisionStrategy) => {
     console.log(`[METHOD] Cambiando método de ${selectedMethod} a ${method}`);
     console.log(`[METHOD] Creando nueva tabla hash con numBuckets: ${bucketCount}, bucketCapacity: ${bucketCapacity}`);
-    
+
     const newHashTable = new StaticHashTable<string, string>({
       numBuckets: bucketCount,
       bucketCapacity: bucketCapacity,
@@ -306,7 +306,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
     const secondaryHashValue = secondaryHash(hashKey.trim());
     const dump = hashTable.dump() as DebugInfo;
     const bucketIndex = primaryHash % dump.numBuckets;
-    
+
     // Generar secuencia de probing
     const probeSequence = [];
     for (let i = 0; i < dump.numBuckets; i++) {
@@ -330,25 +330,25 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
         probingFormula = 'h(k, i) = (h₁(k) + i) mod m';
         probingExplanation = 'Examina posiciones consecutivas: h(k), h(k)+1, h(k)+2, ... hasta encontrar una posición libre.';
         break;
-      
+
       case CollisionStrategy.DOUBLE_HASHING:
         probingMethod = 'Doble Hash (Double Hashing)';
         probingFormula = 'h(k, i) = (h₁(k) + i × h₂(k)) mod m';
         probingExplanation = 'Usa dos funciones hash para generar una secuencia más distribuida y evitar clusters.';
         break;
-      
+
       case CollisionStrategy.CHAINED_LINEAR:
         probingMethod = 'Sondeo Lineal Encadenado (Chained Linear Probing)';
         probingFormula = 'h(k, i) = (h₁(k) + i) mod m (con enlaces)';
         probingExplanation = 'Combina sondeo lineal con encadenamiento para manejar colisiones múltiples en buckets.';
         break;
-      
+
       case CollisionStrategy.SEPARATE_OVERFLOW:
         probingMethod = 'Área de Desborde Separada (Separate Overflow)';
         probingFormula = 'h(k) = h₁(k) mod m (overflow separado)';
         probingExplanation = 'Usa un área de desborde separada para elementos que no caben en los buckets principales.';
         break;
-      
+
       default:
         probingMethod = 'Método no especificado';
         probingFormula = 'N/A';
@@ -385,11 +385,11 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
     const currentDump = hashTable.dump() as DebugInfo;
     const bucket1 = hash1 % currentDump.numBuckets;
     const bucket2 = hash2 % currentDump.numBuckets;
-    
+
     console.log(`[FORCE_COLLISION] Clave 1: "${forceCollisionKey1}" -> Hash: ${hash1} -> Bucket: ${bucket1}`);
     console.log(`[FORCE_COLLISION] Clave 2: "${forceCollisionKey2}" -> Hash: ${hash2} -> Bucket: ${bucket2}`);
     console.log(`[FORCE_COLLISION] Método de resolución: ${getMethodDisplayName(selectedMethod)}`);
-    
+
     // Crear una nueva tabla hash con la función hash forzada y actualizar la tabla principal
     const newHashTable = new StaticHashTable<string, string>({
       numBuckets: currentDump.numBuckets,
@@ -415,7 +415,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
     console.log(`[FORCE_COLLISION] - Buckets: ${finalDump.numBuckets}`);
     console.log(`[FORCE_COLLISION] - Capacidad por bucket: ${finalDump.bucketCapacity}`);
     console.log(`[FORCE_COLLISION] - Elementos en bucket 0: ${finalDump.buckets[0]?.length || 0}`);
-    console.log(`[FORCE_COLLISION] - Elementos en overflow: ${finalDump.overflow.filter((entry: {deleted?: boolean} | null) => entry !== null).length}`);
+    console.log(`[FORCE_COLLISION] - Elementos en overflow: ${finalDump.overflow.filter((entry: { deleted?: boolean } | null) => entry !== null).length}`);
 
     if (bucket1 === bucket2) {
       showMessage(`¡Colisión forzada exitosa! Ambas claves van al bucket ${bucket1}. Método de resolución: ${getMethodDisplayName(selectedMethod)}`, 'success');
@@ -508,14 +508,14 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
                 onChange={(e) => setValueInput(e.target.value)}
                 className={styles.input}
               />
-                             <button onClick={handleInsert} className={styles.button}>
-                 Insertar
-               </button>
-               <button onClick={handleClear} className={styles.button}>
-                 Limpiar Tabla
-               </button>
-             </div>
-           </div>
+              <button onClick={handleInsert} className={styles.button}>
+                Insertar
+              </button>
+              <button onClick={handleClear} className={styles.button}>
+                Limpiar Tabla
+              </button>
+            </div>
+          </div>
         );
 
       case 'search':
@@ -580,7 +580,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
             {showHashInfo && hashInfo && (
               <div className={styles.hashInfo}>
                 <h4>Información de Hash para &quot;{hashKey}&quot;</h4>
-                
+
                 <div className={styles.hashInfoSection}>
                   <h5>Valores de Hash</h5>
                   <p><strong>Hash Primario:</strong> {hashInfo.primaryHash}</p>
@@ -658,7 +658,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
                   <p><strong>Número de Buckets:</strong> {debugInfo.numBuckets}</p>
                   <p><strong>Capacidad por Bucket:</strong> {debugInfo.bucketCapacity}</p>
                 </div>
-                
+
                 <div className={styles.debugSection}>
                   <h5>Buckets</h5>
                   {debugInfo.buckets.map((bucket, index) => (
@@ -683,7 +683,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
                     </div>
                   ))}
                 </div>
-                
+
                 <div className={styles.debugSection}>
                   <h5>Área de Overflow</h5>
                   {debugInfo.overflow.some(entry => entry !== null) ? (
@@ -758,17 +758,17 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
                   <option value={CollisionStrategy.SEPARATE_OVERFLOW}>Área de Desborde Separada</option>
                 </select>
               </div>
-                             <div className={styles.configurationActions}>
-                 <button onClick={handleConfigurationChange} className={styles.configurationButton}>
-                   Configurar
-                 </button>
-                 <button onClick={handleResetConfiguration} className={styles.resetButton}>
-                   Restablecer
-                 </button>
-                 <button onClick={handleClear} className={styles.clearConfigButton}>
-                   Limpiar Tabla
-                 </button>
-               </div>
+              <div className={styles.configurationActions}>
+                <button onClick={handleConfigurationChange} className={styles.configurationButton}>
+                  Configurar
+                </button>
+                <button onClick={handleResetConfiguration} className={styles.resetButton}>
+                  Restablecer
+                </button>
+                <button onClick={handleClear} className={styles.clearConfigButton}>
+                  Limpiar Tabla
+                </button>
+              </div>
             </div>
           </div>
         );
@@ -783,7 +783,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
   return (
     <div className={styles.container}>
       <h1>Visualizador de Tabla Hash Avanzada</h1>
-      
+
       {/* Mensaje de estado */}
       {message && (
         <div className={`${styles.message} ${styles[messageType]}`}>
@@ -837,7 +837,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
             Configuración
           </button>
         </div>
-        
+
         {renderOperationContent()}
       </div>
 
@@ -878,7 +878,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
                   {bucket.items.length}/{bucketCapacity}
                 </span>
               </div>
-              
+
               <div className={styles.bucketItems}>
                 {bucket.items.length === 0 ? (
                   <div className={styles.emptyBucket}>Vacío</div>
@@ -895,31 +895,32 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
                   ))
                 )}
               </div>
-              
-                             {bucket.overflowItems && bucket.overflowItems.length > 0 && (
-                 <div className={styles.overflowChain}>
-                   <div className={styles.overflowHeader}>🚨 Desborde:</div>
-                   {bucket.overflowItems.map((item, index) => (
-                     <div key={index} className={styles.overflowItem}>
-                       <span className={styles.itemKey}>{item.key}</span>
-                       <span className={styles.itemValue}>{item.value}</span>
-                       {item.deleted && <span className={styles.deletedMark}>[BORRADO]</span>}
-                     </div>
-                   ))}
-                 </div>
-               )}
-               
-               {/* Referencia visual al área de desborde cuando se usa SEPARATE_OVERFLOW */}
-               {selectedMethod === CollisionStrategy.SEPARATE_OVERFLOW && 
+
+              {bucket.overflowItems && bucket.overflowItems.length > 0 && (
+                <div className={styles.overflowChain}>
+                  <div className={styles.overflowHeader}>🚨 Desborde:</div>
+                  {bucket.overflowItems.map((item, index) => (
+                    <div key={index} className={styles.overflowItem}>
+                      <span className={styles.itemKey}>{item.key}</span>
+                      <span className={styles.itemValue}>{item.value}</span>
+                      {item.deleted && <span className={styles.deletedMark}>[BORRADO]</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Referencia visual al área de desborde cuando se usa SEPARATE_OVERFLOW */}
+              {selectedMethod === CollisionStrategy.SEPARATE_OVERFLOW &&
                 bucket.overflowItems && bucket.overflowItems.length > 0 && (
-                 <div className={styles.overflowReference}></div>
-               )}
+                  <div className={styles.overflowReference}></div>
+                )}
             </div>
           ))}
         </div>
       </div>
-
-      
+      <footer className={styles.footer}>
+        <span>by thestalkerN-Germán Campodónico</span>
+      </footer>
     </div>
   );
 } 

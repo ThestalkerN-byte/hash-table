@@ -2,10 +2,11 @@ import AdvancedHashTableVisualizer from '../components/AdvancedHashTableVisualiz
 
 export default function Home() {
   return (
-    <div style={{ 
-      minHeight: '100vh', 
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: '20px'
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #EFE6DE 0%, #E6D5C7 50%, #EFE6DE 100%)',
+      padding: '20px',
+      color: 'black'
     }}>
       <AdvancedHashTableVisualizer initialCapacity={8} />
     </div>
