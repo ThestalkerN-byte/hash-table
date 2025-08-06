@@ -34,10 +34,11 @@ interface DirectoryEntry {
 }
 
 export class AdvancedHashTable<K, V> {
-  private buckets: Array<Bucket<K, V>>;
+  private buckets!: Array<Bucket<K, V>>;
   private overflowArea: Array<HashEntry<K, V>>;
   private size: number;
   private capacity: number;
+  private bucketCapacity: number; // Nueva propiedad para capacidad por bucket
   private method: CollisionResolutionMethod;
   private loadFactor: number;
   private maxLoadFactor: number;
@@ -47,9 +48,11 @@ export class AdvancedHashTable<K, V> {
   constructor(
     capacity: number = 16,
     method: CollisionResolutionMethod = CollisionResolutionMethod.CHAINING,
-    maxLoadFactor: number = 0.75
+    maxLoadFactor: number = 0.75,
+    bucketCapacity: number = 4 // Nuevo parámetro para capacidad por bucket
   ) {
     this.capacity = capacity;
+    this.bucketCapacity = bucketCapacity; // Asignar la capacidad por bucket
     this.size = 0;
     this.method = method;
     this.maxLoadFactor = maxLoadFactor;
@@ -153,62 +156,106 @@ export class AdvancedHashTable<K, V> {
    * Inserta un elemento en la tabla
    */
   set(key: K, value: V): void {
+    console.log(`\n=== INSERTANDO ELEMENTO ===`);
+    console.log(`[SET] Insertando clave: "${key}", valor: "${value}"`);
+    console.log(`[SET] Método actual: ${this.method}`);
+    console.log(`[SET] Capacidad por bucket: ${this.bucketCapacity}`);
+    console.log(`[SET] Tamaño actual de la tabla: ${this.size}`);
+    
     if (this.method === CollisionResolutionMethod.EXTENDIBLE_HASH) {
       this.setExtendible(key, value);
       return;
     }
 
     const entry: HashEntry<K, V> = { key, value };
-    let attempt = 0;
-    let bucketIndex = this.getBucketIndex(key, attempt);
+    let addedToMainTable = false;
 
     switch (this.method) {
-      case CollisionResolutionMethod.CHAINING:
-        this.setWithChaining(bucketIndex, entry);
+      case CollisionResolutionMethod.CHAINING: {
+        const bucketIndex = this.getBucketIndex(key, 0);
+        console.log(`[SET] Usando método CHAINING, bucket calculado: ${bucketIndex}`);
+        addedToMainTable = this.setWithChaining(bucketIndex, entry);
         break;
+      }
       
       case CollisionResolutionMethod.LINEAR_PROBING:
-        this.setWithLinearProbing(key, entry);
+        console.log(`[SET] Usando método LINEAR_PROBING`);
+        addedToMainTable = this.setWithLinearProbing(key, entry);
         break;
       
-      case CollisionResolutionMethod.CHAINED_LINEAR_PROBING:
-        this.setWithChainedLinearProbing(bucketIndex, entry);
+      case CollisionResolutionMethod.CHAINED_LINEAR_PROBING: {
+        const bucketIndex = this.getBucketIndex(key, 0);
+        console.log(`[SET] Usando método CHAINED_LINEAR_PROBING, bucket calculado: ${bucketIndex}`);
+        addedToMainTable = this.setWithChainedLinearProbing(bucketIndex, entry);
         break;
+      }
       
-      case CollisionResolutionMethod.SEPARATE_OVERFLOW:
-        this.setWithSeparateOverflow(bucketIndex, entry);
+      case CollisionResolutionMethod.SEPARATE_OVERFLOW: {
+        const bucketIndex = this.getBucketIndex(key, 0);
+        console.log(`[SET] Usando método SEPARATE_OVERFLOW, bucket calculado: ${bucketIndex}`);
+        addedToMainTable = this.setWithSeparateOverflow(bucketIndex, entry);
         break;
+      }
       
       case CollisionResolutionMethod.TABLE_ASSISTED_HASH:
-        this.setWithTableAssistedHash(key, entry);
+        console.log(`[SET] Usando método TABLE_ASSISTED_HASH`);
+        addedToMainTable = this.setWithTableAssistedHash(key, entry);
         break;
     }
 
-    this.size++;
+    // Solo incrementar el tamaño si se agregó a la tabla principal
+    if (addedToMainTable) {
+      this.size++;
+      console.log(`[SET] Elemento agregado a la tabla principal. Nuevo tamaño: ${this.size}`);
+    } else {
+      console.log(`[SET] Elemento NO agregado a la tabla principal (overflow o actualización). Tamaño se mantiene: ${this.size}`);
+    }
+    
     this.updateLoadFactor();
+    console.log(`[SET] Factor de carga actualizado: ${this.loadFactor.toFixed(3)}`);
     this.resizeIfNeeded();
+    console.log(`=== FIN INSERTANDO ELEMENTO ===\n`);
   }
 
   /**
    * Inserción con encadenamiento
    */
-  private setWithChaining(bucketIndex: number, entry: HashEntry<K, V>): void {
+  private setWithChaining(bucketIndex: number, entry: HashEntry<K, V>): boolean {
     const bucket = this.buckets[bucketIndex];
+    
+    console.log(`[CHAINING] Intentando insertar "${entry.key}" en bucket ${bucketIndex}`);
+    console.log(`[CHAINING] Bucket ${bucketIndex} actual: ${bucket.entries.length}/${this.bucketCapacity} elementos`);
     
     // Buscar si la clave ya existe
     const existingIndex = bucket.entries.findIndex(e => e.key === entry.key);
     if (existingIndex !== -1) {
+      console.log(`[CHAINING] Clave "${entry.key}" ya existe en bucket ${bucketIndex}, actualizando valor`);
       bucket.entries[existingIndex] = entry;
-      return;
+      return false; // No es una nueva inserción
     }
     
-    bucket.entries.push(entry);
+    // Verificar si el bucket está lleno
+    if (bucket.entries.length >= this.bucketCapacity) {
+      console.log(`[CHAINING] Bucket ${bucketIndex} está lleno (${bucket.entries.length}/${this.bucketCapacity}), agregando "${entry.key}" al overflow`);
+      // Si está lleno, crear o usar la cadena de overflow
+      if (!bucket.overflowChain) {
+        bucket.overflowChain = { entries: [] };
+        console.log(`[CHAINING] Creando nueva cadena de overflow para bucket ${bucketIndex}`);
+      }
+      bucket.overflowChain.entries.push(entry);
+      console.log(`[CHAINING] Elemento "${entry.key}" agregado al overflow. Overflow actual: ${bucket.overflowChain.entries.length} elementos`);
+      return false; // Se agregó al overflow, no a la tabla principal
+    } else {
+      bucket.entries.push(entry);
+      console.log(`[CHAINING] Elemento "${entry.key}" agregado al bucket ${bucketIndex}. Bucket ahora: ${bucket.entries.length}/${this.bucketCapacity} elementos`);
+      return true; // Se agregó a la tabla principal
+    }
   }
 
   /**
    * Inserción con saturación progresiva
    */
-  private setWithLinearProbing(key: K, entry: HashEntry<K, V>): void {
+  private setWithLinearProbing(key: K, entry: HashEntry<K, V>): boolean {
     let attempt = 0;
     const maxAttempts = this.capacity;
 
@@ -219,16 +266,24 @@ export class AdvancedHashTable<K, V> {
       // Si el bucket está vacío o tiene una entrada marcada como eliminada
       if (bucket.entries.length === 0 || bucket.entries[0].isDeleted) {
         bucket.entries = [entry];
-        return;
+        return true; // Se agregó a la tabla principal
       }
 
       // Si la clave ya existe, actualizar
       if (bucket.entries[0].key === key) {
         bucket.entries[0] = entry;
-        return;
+        return false; // No es una nueva inserción
       }
 
-      attempt++;
+      // Si el bucket está lleno, continuar con el siguiente intento
+      if (bucket.entries.length >= this.bucketCapacity) {
+        attempt++;
+        continue;
+      }
+
+      // Si hay espacio en el bucket, agregar la entrada
+      bucket.entries.push(entry);
+      return true; // Se agregó a la tabla principal
     }
 
     throw new Error('Tabla hash llena');
@@ -237,69 +292,92 @@ export class AdvancedHashTable<K, V> {
   /**
    * Inserción con saturación progresiva encadenada
    */
-  private setWithChainedLinearProbing(bucketIndex: number, entry: HashEntry<K, V>): void {
+  private setWithChainedLinearProbing(bucketIndex: number, entry: HashEntry<K, V>): boolean {
     const bucket = this.buckets[bucketIndex];
+    
+    console.log(`[CHAINED_LINEAR_PROBING] Intentando insertar "${entry.key}" en bucket ${bucketIndex}`);
+    console.log(`[CHAINED_LINEAR_PROBING] Bucket ${bucketIndex} actual: ${bucket.entries.length}/${this.bucketCapacity} elementos`);
     
     // Si el bucket está vacío
     if (bucket.entries.length === 0) {
       bucket.entries.push(entry);
-      return;
+      console.log(`[CHAINED_LINEAR_PROBING] Bucket ${bucketIndex} vacío, agregando "${entry.key}". Bucket ahora: ${bucket.entries.length}/${this.bucketCapacity} elementos`);
+      return true; // Se agregó a la tabla principal
     }
 
     // Si la clave ya existe en este bucket
     const existingIndex = bucket.entries.findIndex(e => e.key === entry.key);
     if (existingIndex !== -1) {
+      console.log(`[CHAINED_LINEAR_PROBING] Clave "${entry.key}" ya existe en bucket ${bucketIndex}, actualizando valor`);
       bucket.entries[existingIndex] = entry;
-      return;
+      return false; // No es una nueva inserción
     }
 
     // Si el bucket está lleno, usar encadenamiento
-    if (bucket.entries.length >= 4) { // Asumiendo 4 entradas por bucket
+    if (bucket.entries.length >= this.bucketCapacity) {
+      console.log(`[CHAINED_LINEAR_PROBING] Bucket ${bucketIndex} está lleno (${bucket.entries.length}/${this.bucketCapacity}), agregando "${entry.key}" al overflow`);
       if (!bucket.overflowChain) {
         bucket.overflowChain = { entries: [] };
+        console.log(`[CHAINED_LINEAR_PROBING] Creando nueva cadena de overflow para bucket ${bucketIndex}`);
       }
       bucket.overflowChain.entries.push(entry);
+      console.log(`[CHAINED_LINEAR_PROBING] Elemento "${entry.key}" agregado al overflow. Overflow actual: ${bucket.overflowChain.entries.length} elementos`);
+      return false; // Se agregó al overflow, no a la tabla principal
     } else {
       bucket.entries.push(entry);
+      console.log(`[CHAINED_LINEAR_PROBING] Elemento "${entry.key}" agregado al bucket ${bucketIndex}. Bucket ahora: ${bucket.entries.length}/${this.bucketCapacity} elementos`);
+      return true; // Se agregó a la tabla principal
     }
   }
 
   /**
    * Inserción con área de desborde por separado
    */
-  private setWithSeparateOverflow(bucketIndex: number, entry: HashEntry<K, V>): void {
+  private setWithSeparateOverflow(bucketIndex: number, entry: HashEntry<K, V>): boolean {
     const bucket = this.buckets[bucketIndex];
+    
+    console.log(`[SEPARATE_OVERFLOW] Intentando insertar "${entry.key}" en bucket ${bucketIndex}`);
+    console.log(`[SEPARATE_OVERFLOW] Bucket ${bucketIndex} actual: ${bucket.entries.length}/${this.bucketCapacity} elementos`);
+    console.log(`[SEPARATE_OVERFLOW] Área de overflow actual: ${this.overflowArea.length} elementos`);
     
     // Si el bucket está vacío
     if (bucket.entries.length === 0) {
       bucket.entries.push(entry);
-      return;
+      console.log(`[SEPARATE_OVERFLOW] Bucket ${bucketIndex} vacío, agregando "${entry.key}". Bucket ahora: ${bucket.entries.length}/${this.bucketCapacity} elementos`);
+      return true; // Se agregó a la tabla principal
     }
 
     // Si la clave ya existe en este bucket
     const existingIndex = bucket.entries.findIndex(e => e.key === entry.key);
     if (existingIndex !== -1) {
+      console.log(`[SEPARATE_OVERFLOW] Clave "${entry.key}" ya existe en bucket ${bucketIndex}, actualizando valor`);
       bucket.entries[existingIndex] = entry;
-      return;
+      return false; // No es una nueva inserción
     }
 
     // Si el bucket está lleno, usar área de desborde
-    if (bucket.entries.length >= 4) {
+    if (bucket.entries.length >= this.bucketCapacity) {
+      console.log(`[SEPARATE_OVERFLOW] Bucket ${bucketIndex} está lleno (${bucket.entries.length}/${this.bucketCapacity}), agregando "${entry.key}" al área de overflow`);
       this.overflowArea.push(entry);
       // Crear enlace al área de desborde
       if (!bucket.overflowChain) {
         bucket.overflowChain = { entries: [] };
+        console.log(`[SEPARATE_OVERFLOW] Creando enlace al área de overflow para bucket ${bucketIndex}`);
       }
       bucket.overflowChain.entries.push(entry);
+      console.log(`[SEPARATE_OVERFLOW] Elemento "${entry.key}" agregado al área de overflow. Área de overflow ahora: ${this.overflowArea.length} elementos`);
+      return false; // Se agregó al overflow, no a la tabla principal
     } else {
       bucket.entries.push(entry);
+      console.log(`[SEPARATE_OVERFLOW] Elemento "${entry.key}" agregado al bucket ${bucketIndex}. Bucket ahora: ${bucket.entries.length}/${this.bucketCapacity} elementos`);
+      return true; // Se agregó a la tabla principal
     }
   }
 
   /**
    * Inserción con hash asistido por tabla
    */
-  private setWithTableAssistedHash(key: K, entry: HashEntry<K, V>): void {
+  private setWithTableAssistedHash(key: K, entry: HashEntry<K, V>): boolean {
     let attempt = 0;
     const maxAttempts = this.capacity;
 
@@ -309,15 +387,23 @@ export class AdvancedHashTable<K, V> {
 
       if (bucket.entries.length === 0 || bucket.entries[0].isDeleted) {
         bucket.entries = [entry];
-        return;
+        return true; // Se agregó a la tabla principal
       }
 
       if (bucket.entries[0].key === key) {
         bucket.entries[0] = entry;
-        return;
+        return false; // No es una nueva inserción
       }
 
-      attempt++;
+      // Si el bucket está lleno, continuar con el siguiente intento
+      if (bucket.entries.length >= this.bucketCapacity) {
+        attempt++;
+        continue;
+      }
+
+      // Si hay espacio en el bucket, agregar la entrada
+      bucket.entries.push(entry);
+      return true; // Se agregó a la tabla principal
     }
 
     throw new Error('Tabla hash llena');
@@ -346,7 +432,7 @@ export class AdvancedHashTable<K, V> {
     }
 
     // Si el bucket está lleno, dividir
-    if (bucket.entries.length >= 4) {
+    if (bucket.entries.length >= this.bucketCapacity) {
       this.splitBucket(bucketIndex);
       this.setExtendible(key, value); // Reintentar inserción
     } else {
@@ -752,13 +838,23 @@ export class AdvancedHashTable<K, V> {
    * Actualiza el factor de carga
    */
   private updateLoadFactor(): void {
-    this.loadFactor = this.size / this.capacity;
+    // El factor de carga debe calcularse basándose en la capacidad total de almacenamiento
+    // que es capacity * bucketCapacity, no solo capacity
+    const totalCapacity = this.capacity * this.bucketCapacity;
+    this.loadFactor = this.size / totalCapacity;
+    
+    console.log(`[LOAD_FACTOR] Actualizando factor de carga:`);
+    console.log(`[LOAD_FACTOR] - Tamaño actual: ${this.size}`);
+    console.log(`[LOAD_FACTOR] - Capacidad total: ${totalCapacity} (${this.capacity} buckets × ${this.bucketCapacity} elementos)`);
+    console.log(`[LOAD_FACTOR] - Factor de carga: ${(this.loadFactor * 100).toFixed(1)}%`);
   }
 
   /**
    * Redimensiona la tabla si es necesario
    */
   private resizeIfNeeded(): void {
+    // El factor de carga ya se calcula correctamente basándose en la capacidad total
+    // (capacity * bucketCapacity), por lo que esta comparación es correcta
     if (this.loadFactor > this.maxLoadFactor) {
       this.resize(this.capacity * 2);
     }

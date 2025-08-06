@@ -1,17 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AdvancedHashTable, CollisionResolutionMethod } from '../AdvancedHashTable';
 import styles from './AdvancedHashTableVisualizer.module.css';
+import { StaticHashTable, CollisionStrategy } from '../MyHashTable';
 
+// Interfaces para la nueva implementación
 interface HashEntry {
   key: string;
   value: string;
-  isDeleted?: boolean;
-  originalIndex?: number;
-  probeCount?: number;
-  hashValue?: number;
-  secondaryHash?: number;
+  deleted?: boolean;
+  next?: number;
 }
 
 interface AdvancedHashTableVisualizerProps {
@@ -21,36 +19,39 @@ interface AdvancedHashTableVisualizerProps {
 interface BucketItem {
   key: string;
   value: string;
-  isDeleted?: boolean;
+  deleted?: boolean;
+  next?: number;
 }
 
 interface Bucket {
   index: number;
   items: BucketItem[];
   overflowItems?: BucketItem[];
-  overflowChain?: Bucket;
 }
 
 interface Stats {
   size: number;
   capacity: number;
   loadFactor: number;
-  method: CollisionResolutionMethod;
+  method: CollisionStrategy;
   buckets: Array<{ entries: number; overflowEntries: number }>;
 }
 
 interface DebugInfo {
-  method: CollisionResolutionMethod;
+  strategy: CollisionStrategy;
+  numBuckets: number;
+  bucketCapacity: number;
   buckets: Array<{
-    index: number;
-    entries: HashEntry[];
-    overflowChain?: unknown;
-    probeInfo?: { totalProbes: number; maxProbes: number };
-  }>;
-  overflowArea: HashEntry[];
-  directory?: unknown[];
-  globalDepth?: number;
-  hashTable: HashEntry[];
+    key: string;
+    value: string;
+    next: number | null;
+    deleted: boolean;
+  }>[];
+  overflow: Array<{
+    key: string;
+    value: string;
+    deleted: boolean;
+  } | null>;
 }
 
 interface HashInfo {
@@ -58,12 +59,45 @@ interface HashInfo {
   secondaryHash?: number;
   bucketIndex: number;
   probeSequence: number[];
+  probingMethod: string;
+  probingFormula: string;
+  probingExplanation: string;
 }
 
+type OperationType = 'insert' | 'search' | 'delete' | 'hash-analysis' | 'force-collision' | 'debug-info' | 'configuration';
+
 export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: AdvancedHashTableVisualizerProps) {
-  const [hashTable, setHashTable] = useState<AdvancedHashTable<string, string>>(
-    new AdvancedHashTable(initialCapacity, CollisionResolutionMethod.CHAINING)
+  // Función hash simple para la implementación
+  const simpleHash = (key: string): number => {
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) {
+      const char = key.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convierte a entero de 32 bits
+    }
+    return Math.abs(hash);
+  };
+
+  // Función hash secundaria para doble hash
+  const secondaryHash = (key: string): number => {
+    let hash = 5381;
+    for (let i = 0; i < key.length; i++) {
+      hash = ((hash << 5) + hash) + key.charCodeAt(i);
+    }
+    return Math.abs(hash);
+  };
+
+  // Inicializar tabla hash
+  const [hashTable, setHashTable] = useState<StaticHashTable<string, string>>(
+    () => new StaticHashTable<string, string>({
+      numBuckets: initialCapacity,
+      bucketCapacity: 4,
+      primaryHash: simpleHash,
+      secondaryHash: secondaryHash,
+      strategy: CollisionStrategy.LINEAR_PROBING
+    })
   );
+  
   const [keyInput, setKeyInput] = useState('');
   const [valueInput, setValueInput] = useState('');
   const [searchKey, setSearchKey] = useState('');
@@ -71,7 +105,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
   const [deleteKey, setDeleteKey] = useState('');
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
-  const [selectedMethod, setSelectedMethod] = useState<CollisionResolutionMethod>(CollisionResolutionMethod.CHAINING);
+  const [selectedMethod, setSelectedMethod] = useState<CollisionStrategy>(CollisionStrategy.LINEAR_PROBING);
   const [stats, setStats] = useState<Stats | null>(null);
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [showDebugInfo, setShowDebugInfo] = useState(false);
@@ -80,34 +114,39 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
   const [forceCollisionKey1, setForceCollisionKey1] = useState('');
   const [forceCollisionKey2, setForceCollisionKey2] = useState('');
   const [showHashInfo, setShowHashInfo] = useState(false);
+  const [selectedOperation, setSelectedOperation] = useState<OperationType>('insert');
+  const [bucketCount, setBucketCount] = useState(initialCapacity);
+  const [bucketCapacity, setBucketCapacity] = useState(4);
 
   // Actualizar estadísticas cuando cambie la tabla
   useEffect(() => {
-    setStats(hashTable.getStats());
-    const debug = hashTable.getDebugInfo();
-    setDebugInfo(debug);
+    console.log(`[UI] Hash table changed, updating stats.`);
+    const dump = hashTable.dump();
+    const totalEntries = dump.buckets.reduce((sum: number, bucket: Array<{deleted?: boolean}>) => 
+      sum + bucket.filter((entry: {deleted?: boolean}) => !entry.deleted).length, 0);
+    const overflowEntries = dump.overflow.filter((entry: {deleted?: boolean} | null) => entry && !entry.deleted).length;
+    
+    setStats({
+      size: totalEntries,
+      capacity: dump.numBuckets,
+      loadFactor: totalEntries / (dump.numBuckets * dump.bucketCapacity),
+      method: dump.strategy,
+      buckets: dump.buckets.map((bucket: Array<{deleted?: boolean}>) => ({
+        entries: bucket.filter((entry: {deleted?: boolean}) => !entry.deleted).length,
+        overflowEntries: 0 // Los overflow están en el área separada
+      }))
+    });
+    
+    setDebugInfo(dump);
   }, [hashTable]);
-
-  // Debug temporal para hash extensible
-  useEffect(() => {
-    if (selectedMethod === CollisionResolutionMethod.EXTENDIBLE_HASH && debugInfo) {
-      console.log('Hash Extensible Debug:', {
-        method: debugInfo.method,
-        directory: debugInfo.directory,
-        globalDepth: debugInfo.globalDepth,
-        buckets: debugInfo.buckets
-      });
-    }
-  }, [selectedMethod, debugInfo]);
 
   // Función para generar buckets visuales
   const generateBuckets = (): Bucket[] => {
+    const dump = hashTable.dump();
     const buckets: Bucket[] = [];
-    const entries = hashTable.entries();
-    const stats = hashTable.getStats();
     
-    // Crear buckets vacíos
-    for (let i = 0; i < initialCapacity; i++) {
+    // Crear buckets vacíos usando la capacidad real de la tabla hash
+    for (let i = 0; i < dump.numBuckets; i++) {
       buckets.push({ 
         index: i, 
         items: [],
@@ -115,13 +154,40 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
       });
     }
     
-    // Distribuir elementos en buckets según el método
-    entries.forEach(({ key, value }) => {
-      const bucketIndex = getBucketIndexForVisualization(key);
-      if (bucketIndex < buckets.length) {
-        buckets[bucketIndex].items.push({ key, value });
+    // Distribuir elementos en buckets según el dump
+    dump.buckets.forEach((bucketEntries: Array<{key: unknown, value: unknown, deleted?: boolean, next?: number}>, index: number) => {
+      if (index < buckets.length) {
+        // Agregar elementos principales del bucket (no borrados)
+        bucketEntries.filter((entry: {deleted?: boolean}) => !entry.deleted).forEach((entry: {key: unknown, value: unknown, deleted?: boolean, next?: number}) => {
+          buckets[index].items.push({ 
+            key: String(entry.key), 
+            value: String(entry.value),
+            deleted: entry.deleted,
+            next: entry.next
+          });
+        });
       }
     });
+    
+    // Agregar elementos del área de overflow separada
+    const overflowItems = dump.overflow
+      .filter((entry: {key: unknown, value: unknown, deleted?: boolean} | null) => entry && !entry.deleted)
+      .map((entry: {key: unknown, value: unknown, deleted?: boolean} | null) => ({
+        key: String(entry!.key),
+        value: String(entry!.value),
+        deleted: entry!.deleted
+      }));
+    
+    // Para simplificar, agregamos los overflow items al primer bucket
+    // En una implementación más compleja, podrías mapear overflow items a buckets específicos
+    if (overflowItems.length > 0 && buckets.length > 0) {
+      buckets[0].overflowItems = overflowItems;
+    }
+    
+    console.log(`[GENERATE_BUCKETS] Generando buckets para visualización:`);
+    console.log(`[GENERATE_BUCKETS] - Total buckets: ${buckets.length}`);
+    console.log(`[GENERATE_BUCKETS] - Elementos en buckets principales: ${buckets.reduce((sum, b) => sum + b.items.length, 0)}`);
+    console.log(`[GENERATE_BUCKETS] - Elementos en overflow: ${overflowItems.length}`);
     
     return buckets;
   };
@@ -129,148 +195,592 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
   // Función para obtener el índice del bucket para visualización
   const getBucketIndexForVisualization = (key: string): number => {
     const keyString = String(key);
-    let hash = 0;
-    
-    for (let i = 0; i < keyString.length; i++) {
-      const char = keyString.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    
-    return Math.abs(hash) % initialCapacity;
+    const hash = simpleHash(keyString);
+    return hash % hashTable.dump().numBuckets;
   };
 
-  // Función para insertar elemento
   const handleInsert = () => {
     if (!keyInput.trim() || !valueInput.trim()) {
       showMessage('Por favor ingresa tanto la clave como el valor', 'error');
       return;
     }
 
-    try {
-      hashTable.set(keyInput, valueInput);
+    const success = hashTable.insertar(keyInput.trim(), valueInput.trim());
+    if (success) {
+      showMessage(`Elemento insertado: ${keyInput} -> ${valueInput}`, 'success');
       setKeyInput('');
       setValueInput('');
-      showMessage(`Elemento "${keyInput}" insertado exitosamente`, 'success');
-    } catch (error) {
-      showMessage('Error al insertar elemento: ' + (error as Error).message, 'error');
+    } else {
+      showMessage('No se pudo insertar el elemento (tabla llena)', 'error');
     }
   };
 
-  // Función para buscar elemento
   const handleSearch = () => {
     if (!searchKey.trim()) {
       showMessage('Por favor ingresa una clave para buscar', 'error');
       return;
     }
 
-    const result = hashTable.get(searchKey);
-    setSearchResult(result);
-    
-    if (result !== undefined) {
-      showMessage(`Elemento encontrado: "${searchKey}" = "${result}"`, 'success');
+    const result = hashTable.buscar(searchKey.trim());
+    if (result !== null) {
+      setSearchResult(result);
+      showMessage(`Elemento encontrado: ${searchKey} -> ${result}`, 'success');
     } else {
-      showMessage(`Elemento "${searchKey}" no encontrado`, 'error');
+      setSearchResult(undefined);
+      showMessage(`Elemento no encontrado: ${searchKey}`, 'error');
     }
   };
 
-  // Función para eliminar elemento
   const handleDelete = () => {
     if (!deleteKey.trim()) {
       showMessage('Por favor ingresa una clave para eliminar', 'error');
       return;
     }
 
-    const deleted = hashTable.delete(deleteKey);
-    setDeleteKey('');
-    
-    if (deleted) {
-      showMessage(`Elemento "${deleteKey}" eliminado exitosamente`, 'success');
+    const success = hashTable.eliminar(deleteKey.trim());
+    if (success) {
+      showMessage(`Elemento eliminado: ${deleteKey}`, 'success');
+      setDeleteKey('');
     } else {
-      showMessage(`Elemento "${deleteKey}" no encontrado`, 'error');
+      showMessage(`Elemento no encontrado: ${deleteKey}`, 'error');
     }
   };
 
-  // Función para limpiar tabla
   const handleClear = () => {
-    hashTable.clear();
-    setSearchResult(undefined);
+    // Crear una nueva tabla hash vacía
+    const newHashTable = new StaticHashTable<string, string>({
+      numBuckets: bucketCount,
+      bucketCapacity: bucketCapacity,
+      primaryHash: simpleHash,
+      secondaryHash: secondaryHash,
+      strategy: selectedMethod
+    });
+    setHashTable(newHashTable);
     showMessage('Tabla hash limpiada', 'info');
   };
 
-  // Función para cambiar método de resolución
-  const handleMethodChange = (method: CollisionResolutionMethod) => {
+  const handleMethodChange = (method: CollisionStrategy) => {
+    console.log(`[METHOD] Cambiando método de ${selectedMethod} a ${method}`);
+    console.log(`[METHOD] Creando nueva tabla hash con numBuckets: ${bucketCount}, bucketCapacity: ${bucketCapacity}`);
+    
+    const newHashTable = new StaticHashTable<string, string>({
+      numBuckets: bucketCount,
+      bucketCapacity: bucketCapacity,
+      primaryHash: simpleHash,
+      secondaryHash: secondaryHash,
+      strategy: method
+    });
+    setHashTable(newHashTable);
     setSelectedMethod(method);
-    hashTable.setMethod(method);
     showMessage(`Método cambiado a: ${getMethodDisplayName(method)}`, 'info');
   };
 
-  // Función para mostrar mensajes
   const showMessage = (msg: string, type: 'success' | 'error' | 'info') => {
     setMessage(msg);
     setMessageType(type);
     setTimeout(() => setMessage(''), 3000);
   };
 
-  // Función para obtener nombre del método
-  const getMethodDisplayName = (method: CollisionResolutionMethod): string => {
-    const names = {
-      [CollisionResolutionMethod.CHAINING]: 'Encadenamiento',
-      [CollisionResolutionMethod.LINEAR_PROBING]: 'Saturación Progresiva',
-      [CollisionResolutionMethod.CHAINED_LINEAR_PROBING]: 'Saturación Progresiva Encadenada',
-      [CollisionResolutionMethod.SEPARATE_OVERFLOW]: 'Área de Desborde por Separado',
-      [CollisionResolutionMethod.TABLE_ASSISTED_HASH]: 'Hash Asistido por Tabla',
-      [CollisionResolutionMethod.EXTENDIBLE_HASH]: 'Hash Extensible'
-    };
-    return names[method];
+  const getMethodDisplayName = (method: CollisionStrategy): string => {
+    switch (method) {
+      case CollisionStrategy.LINEAR_PROBING:
+        return 'Saturación Progresiva';
+      case CollisionStrategy.CHAINED_LINEAR:
+        return 'Saturación Progresiva Encadenada';
+      case CollisionStrategy.DOUBLE_HASHING:
+        return 'Doble Dispersión';
+      case CollisionStrategy.SEPARATE_OVERFLOW:
+        return 'Área de Desborde Separada';
+      default:
+        return 'Desconocido';
+    }
   };
 
-  // Función para obtener información de hash
   const handleGetHashInfo = () => {
     if (!hashKey.trim()) {
       showMessage('Por favor ingresa una clave para analizar', 'error');
       return;
     }
 
-    try {
-      const info = hashTable.getHashInfo(hashKey);
-      setHashInfo(info);
-      setShowHashInfo(true);
-      showMessage(`Información de hash obtenida para "${hashKey}"`, 'success');
-    } catch (error) {
-      showMessage('Error al obtener información de hash: ' + (error as Error).message, 'error');
+    const primaryHash = simpleHash(hashKey.trim());
+    const secondaryHashValue = secondaryHash(hashKey.trim());
+    const bucketIndex = primaryHash % hashTable.dump().numBuckets;
+    
+    // Generar secuencia de probing
+    const probeSequence = [];
+    for (let i = 0; i < hashTable.dump().numBuckets; i++) {
+      if (selectedMethod === CollisionStrategy.DOUBLE_HASHING) {
+        const h2 = secondaryHashValue % hashTable.dump().numBuckets;
+        const adjustedH2 = h2 === 0 ? 1 : h2;
+        probeSequence.push((primaryHash + i * adjustedH2) % hashTable.dump().numBuckets);
+      } else {
+        probeSequence.push((primaryHash + i) % hashTable.dump().numBuckets);
+      }
     }
+
+    // Determinar información del método de probing
+    let probingMethod = '';
+    let probingFormula = '';
+    let probingExplanation = '';
+
+    switch (selectedMethod) {
+      case CollisionStrategy.LINEAR_PROBING:
+        probingMethod = 'Sondeo Lineal (Linear Probing)';
+        probingFormula = 'h(k, i) = (h₁(k) + i) mod m';
+        probingExplanation = 'Examina posiciones consecutivas: h(k), h(k)+1, h(k)+2, ... hasta encontrar una posición libre.';
+        break;
+      
+      case CollisionStrategy.DOUBLE_HASHING:
+        probingMethod = 'Doble Hash (Double Hashing)';
+        probingFormula = 'h(k, i) = (h₁(k) + i × h₂(k)) mod m';
+        probingExplanation = 'Usa dos funciones hash para generar una secuencia más distribuida y evitar clusters.';
+        break;
+      
+      case CollisionStrategy.CHAINED_LINEAR:
+        probingMethod = 'Sondeo Lineal Encadenado (Chained Linear Probing)';
+        probingFormula = 'h(k, i) = (h₁(k) + i) mod m (con enlaces)';
+        probingExplanation = 'Combina sondeo lineal con encadenamiento para manejar colisiones múltiples en buckets.';
+        break;
+      
+      case CollisionStrategy.SEPARATE_OVERFLOW:
+        probingMethod = 'Área de Desborde Separada (Separate Overflow)';
+        probingFormula = 'h(k) = h₁(k) mod m (overflow separado)';
+        probingExplanation = 'Usa un área de desborde separada para elementos que no caben en los buckets principales.';
+        break;
+      
+      default:
+        probingMethod = 'Método no especificado';
+        probingFormula = 'N/A';
+        probingExplanation = 'Método de resolución de colisiones no implementado.';
+    }
+
+    setHashInfo({
+      primaryHash,
+      secondaryHash: selectedMethod === CollisionStrategy.DOUBLE_HASHING ? secondaryHashValue : undefined,
+      bucketIndex,
+      probeSequence,
+      probingMethod,
+      probingFormula,
+      probingExplanation
+    });
+    setShowHashInfo(true);
   };
 
-  // Función para forzar colisión
   const handleForceCollision = () => {
     if (!forceCollisionKey1.trim() || !forceCollisionKey2.trim()) {
-      showMessage('Por favor ingresa dos claves para verificar colisión', 'error');
+      showMessage('Por favor ingresa ambas claves', 'error');
       return;
     }
 
-    try {
-      const hasCollision = hashTable.forceCollision(forceCollisionKey1, forceCollisionKey2);
-      if (hasCollision) {
-        showMessage(`¡Colisión detectada! Las claves "${forceCollisionKey1}" y "${forceCollisionKey2}" van al mismo bucket`, 'info');
-      } else {
-        showMessage(`No hay colisión entre "${forceCollisionKey1}" y "${forceCollisionKey2}"`, 'info');
-      }
-    } catch (error) {
-      showMessage('Error al verificar colisión: ' + (error as Error).message, 'error');
+    // Función hash modificada que siempre devuelve el mismo índice para forzar colisiones
+    const forcedHash = (key: string): number => {
+      // Siempre devuelve el índice 0 para forzar que todas las claves vayan al mismo bucket
+      return 0;
+    };
+
+    // Usar la función hash forzada para ambas claves
+    const hash1 = forcedHash(forceCollisionKey1.trim());
+    const hash2 = forcedHash(forceCollisionKey2.trim());
+    const bucket1 = hash1 % hashTable.dump().numBuckets;
+    const bucket2 = hash2 % hashTable.dump().numBuckets;
+    
+    console.log(`[FORCE_COLLISION] Clave 1: "${forceCollisionKey1}" -> Hash: ${hash1} -> Bucket: ${bucket1}`);
+    console.log(`[FORCE_COLLISION] Clave 2: "${forceCollisionKey2}" -> Hash: ${hash2} -> Bucket: ${bucket2}`);
+    console.log(`[FORCE_COLLISION] Método de resolución: ${getMethodDisplayName(selectedMethod)}`);
+    
+    // Crear una nueva tabla hash con la función hash forzada y actualizar la tabla principal
+    const newHashTable = new StaticHashTable<string, string>({
+      numBuckets: hashTable.dump().numBuckets,
+      bucketCapacity: hashTable.dump().bucketCapacity,
+      primaryHash: forcedHash,
+      secondaryHash: secondaryHash,
+      strategy: selectedMethod
+    });
+
+    // Insertar ambas claves en la nueva tabla
+    const success1 = newHashTable.insertar(forceCollisionKey1.trim(), `valor_${forceCollisionKey1}`);
+    const success2 = newHashTable.insertar(forceCollisionKey2.trim(), `valor_${forceCollisionKey2}`);
+
+    console.log(`[FORCE_COLLISION] Inserción clave 1: ${success1 ? 'EXITOSA' : 'FALLIDA'}`);
+    console.log(`[FORCE_COLLISION] Inserción clave 2: ${success2 ? 'EXITOSA' : 'FALLIDA'}`);
+
+    // Actualizar la tabla hash principal para que se vea en la visualización
+    setHashTable(newHashTable);
+
+    // Mostrar el estado final de la tabla
+    const dump = newHashTable.dump();
+    console.log(`[FORCE_COLLISION] Estado final de la tabla:`);
+    console.log(`[FORCE_COLLISION] - Buckets: ${dump.numBuckets}`);
+    console.log(`[FORCE_COLLISION] - Capacidad por bucket: ${dump.bucketCapacity}`);
+    console.log(`[FORCE_COLLISION] - Elementos en bucket 0: ${dump.buckets[0]?.length || 0}`);
+    console.log(`[FORCE_COLLISION] - Elementos en overflow: ${dump.overflow.filter((entry: {deleted?: boolean} | null) => entry !== null).length}`);
+
+    if (bucket1 === bucket2) {
+      showMessage(`¡Colisión forzada exitosa! Ambas claves van al bucket ${bucket1}. Método de resolución: ${getMethodDisplayName(selectedMethod)}`, 'success');
+    } else {
+      showMessage(`Error: Las claves no están colisionando como se esperaba`, 'error');
     }
   };
 
-  // Función para mostrar información de debug
   const toggleDebugInfo = () => {
     setShowDebugInfo(!showDebugInfo);
+  };
+
+  const handleConfigurationChange = () => {
+    console.log(`\n=== CONFIGURANDO TABLA HASH ===`);
+    console.log(`[CONFIG] Función handleConfigurationChange llamada`);
+    console.log(`[CONFIG] Valores de configuración:`);
+    console.log(`[CONFIG] - Cantidad de buckets: ${bucketCount}`);
+    console.log(`[CONFIG] - Capacidad por bucket: ${bucketCapacity}`);
+    console.log(`[CONFIG] - Método seleccionado: ${selectedMethod}`);
+
+    if (bucketCount < 1 || bucketCount > 100) {
+      console.log(`[CONFIG] ERROR: Cantidad de buckets inválida: ${bucketCount}`);
+      showMessage('La cantidad de buckets debe ser un número entre 1 y 100', 'error');
+      return;
+    }
+
+    if (bucketCapacity < 1 || bucketCapacity > 20) {
+      console.log(`[CONFIG] ERROR: Capacidad por bucket inválida: ${bucketCapacity}`);
+      showMessage('La capacidad de almacenamiento debe ser un número entre 1 y 20', 'error');
+      return;
+    }
+
+    console.log(`[CONFIG] Creando nueva tabla hash con configuración:`);
+    console.log(`[CONFIG] - numBuckets: ${bucketCount}`);
+    console.log(`[CONFIG] - strategy: ${selectedMethod}`);
+    console.log(`[CONFIG] - bucketCapacity: ${bucketCapacity}`);
+
+    const newHashTable = new StaticHashTable<string, string>({
+      numBuckets: bucketCount,
+      bucketCapacity: bucketCapacity,
+      primaryHash: simpleHash,
+      secondaryHash: secondaryHash,
+      strategy: selectedMethod
+    });
+    setHashTable(newHashTable);
+
+    console.log(`[CONFIG] Tabla hash creada exitosamente`);
+    console.log(`[CONFIG] Verificando configuración aplicada:`);
+    const dump = newHashTable.dump();
+    console.log(`[CONFIG] - Tamaño de buckets: ${dump.numBuckets}`);
+    console.log(`[CONFIG] - Método: ${dump.strategy}`);
+    console.log(`=== FIN CONFIGURACIÓN ===\n`);
+
+    showMessage(`Tabla hash reconfigurada: ${bucketCount} buckets con capacidad de ${bucketCapacity} elementos por bucket`, 'success');
+  };
+
+  const handleResetConfiguration = () => {
+    setBucketCount(initialCapacity);
+    setBucketCapacity(4);
+    const newHashTable = new StaticHashTable<string, string>({
+      numBuckets: initialCapacity,
+      bucketCapacity: 4,
+      primaryHash: simpleHash,
+      secondaryHash: secondaryHash,
+      strategy: CollisionStrategy.LINEAR_PROBING
+    });
+    setHashTable(newHashTable);
+    setSelectedMethod(CollisionStrategy.LINEAR_PROBING);
+    showMessage('Configuración restablecida a valores por defecto', 'info');
+  };
+
+  const renderOperationContent = () => {
+    switch (selectedOperation) {
+      case 'insert':
+        return (
+          <div className={styles.operationContent}>
+            <h3>Insertar Elemento</h3>
+            <div className={styles.inputGroup}>
+              <input
+                type="text"
+                placeholder="Clave"
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                className={styles.input}
+              />
+              <input
+                type="text"
+                placeholder="Valor"
+                value={valueInput}
+                onChange={(e) => setValueInput(e.target.value)}
+                className={styles.input}
+              />
+                             <button onClick={handleInsert} className={styles.button}>
+                 Insertar
+               </button>
+               <button onClick={handleClear} className={styles.button}>
+                 Limpiar Tabla
+               </button>
+             </div>
+           </div>
+        );
+
+      case 'search':
+        return (
+          <div className={styles.operationContent}>
+            <h3>Buscar Elemento</h3>
+            <div className={styles.inputGroup}>
+              <input
+                type="text"
+                placeholder="Clave a buscar"
+                value={searchKey}
+                onChange={(e) => setSearchKey(e.target.value)}
+                className={styles.input}
+              />
+              <button onClick={handleSearch} className={styles.button}>
+                Buscar
+              </button>
+            </div>
+            {searchResult !== undefined && (
+              <div className={styles.searchResult}>
+                <strong>Resultado:</strong> {searchResult}
+              </div>
+            )}
+          </div>
+        );
+
+      case 'delete':
+        return (
+          <div className={styles.operationContent}>
+            <h3>Eliminar Elemento</h3>
+            <div className={styles.inputGroup}>
+              <input
+                type="text"
+                placeholder="Clave a eliminar"
+                value={deleteKey}
+                onChange={(e) => setDeleteKey(e.target.value)}
+                className={styles.input}
+              />
+              <button onClick={handleDelete} className={styles.button}>
+                Eliminar
+              </button>
+            </div>
+          </div>
+        );
+
+      case 'hash-analysis':
+        return (
+          <div className={styles.operationContent}>
+            <h3>Análisis de Hash</h3>
+            <div className={styles.inputGroup}>
+              <input
+                type="text"
+                placeholder="Clave para analizar"
+                value={hashKey}
+                onChange={(e) => setHashKey(e.target.value)}
+                className={styles.input}
+              />
+              <button onClick={handleGetHashInfo} className={styles.button}>
+                Analizar
+              </button>
+            </div>
+            {showHashInfo && hashInfo && (
+              <div className={styles.hashInfo}>
+                <h4>Información de Hash para &quot;{hashKey}&quot;</h4>
+                
+                <div className={styles.hashInfoSection}>
+                  <h5>Valores de Hash</h5>
+                  <p><strong>Hash Primario:</strong> {hashInfo.primaryHash}</p>
+                  {hashInfo.secondaryHash && (
+                    <p><strong>Hash Secundario:</strong> {hashInfo.secondaryHash}</p>
+                  )}
+                  <p><strong>Índice del Bucket:</strong> {hashInfo.bucketIndex}</p>
+                </div>
+
+                <div className={styles.hashInfoSection}>
+                  <h5>Método de Probing Implementado</h5>
+                  <p><strong>Tipo:</strong> {hashInfo.probingMethod}</p>
+                  <p><strong>Fórmula:</strong> <code>{hashInfo.probingFormula}</code></p>
+                  <p><strong>Explicación:</strong> {hashInfo.probingExplanation}</p>
+                </div>
+
+                <div className={styles.hashInfoSection}>
+                  <h5>Secuencia de Probing</h5>
+                  <p>Orden de posiciones que se revisarán en caso de colisión:</p>
+                  <div className={styles.probeSequence}>
+                    {hashInfo.probeSequence.map((index, i) => (
+                      <span key={i} className={styles.probeStep}>
+                        {i === 0 ? index : ` → ${index}`}
+                      </span>
+                    ))}
+                  </div>
+                  <p className={styles.probeNote}>
+                    <strong>Nota:</strong> Si la posición inicial está ocupada, se revisarán las siguientes posiciones en este orden.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+      case 'force-collision':
+        return (
+          <div className={styles.operationContent}>
+            <h3>Forzar Colisión</h3>
+            <div className={styles.inputGroup}>
+              <input
+                type="text"
+                placeholder="Primera clave"
+                value={forceCollisionKey1}
+                onChange={(e) => setForceCollisionKey1(e.target.value)}
+                className={styles.input}
+              />
+              <input
+                type="text"
+                placeholder="Segunda clave"
+                value={forceCollisionKey2}
+                onChange={(e) => setForceCollisionKey2(e.target.value)}
+                className={styles.input}
+              />
+              <button onClick={handleForceCollision} className={styles.button}>
+                Verificar Colisión
+              </button>
+            </div>
+          </div>
+        );
+
+      case 'debug-info':
+        return (
+          <div className={styles.operationContent}>
+            <h3>Información de Debug</h3>
+            <button onClick={toggleDebugInfo} className={styles.button}>
+              {showDebugInfo ? 'Ocultar' : 'Mostrar'} Información de Debug
+            </button>
+            {showDebugInfo && debugInfo && (
+              <div className={styles.debugInfo}>
+                <h4>Información Detallada de la Tabla Hash</h4>
+                <div className={styles.debugSection}>
+                  <h5>Configuración</h5>
+                  <p><strong>Estrategia:</strong> {getMethodDisplayName(debugInfo.strategy)}</p>
+                  <p><strong>Número de Buckets:</strong> {debugInfo.numBuckets}</p>
+                  <p><strong>Capacidad por Bucket:</strong> {debugInfo.bucketCapacity}</p>
+                </div>
+                
+                <div className={styles.debugSection}>
+                  <h5>Buckets</h5>
+                  {debugInfo.buckets.map((bucket, index) => (
+                    <div key={index} className={styles.bucketDebug}>
+                      <strong>Bucket {index}:</strong>
+                      {bucket.length === 0 ? (
+                        <span className={styles.emptyBucket}>Vacío</span>
+                      ) : (
+                        <div className={styles.bucketEntries}>
+                          {bucket.map((entry, entryIndex) => (
+                            <div key={entryIndex} className={styles.entryDebug}>
+                              <span className={styles.entryKey}>{entry.key}</span>
+                              <span className={styles.entryValue}>→ {entry.value}</span>
+                              {entry.deleted && <span className={styles.deletedMark}>[BORRADO]</span>}
+                              {entry.next !== null && entry.next !== undefined && (
+                                <span className={styles.nextPointer}>→ {entry.next}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                
+                <div className={styles.debugSection}>
+                  <h5>Área de Overflow</h5>
+                  {debugInfo.overflow.some(entry => entry !== null) ? (
+                    <div className={styles.overflowDebug}>
+                      {debugInfo.overflow.map((entry, index) => (
+                        entry && (
+                          <div key={index} className={styles.overflowEntry}>
+                            <span className={styles.overflowIndex}>[{index}]</span>
+                            <span className={styles.entryKey}>{entry.key}</span>
+                            <span className={styles.entryValue}>→ {entry.value}</span>
+                            {entry.deleted && <span className={styles.deletedMark}>[BORRADO]</span>}
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  ) : (
+                    <span className={styles.emptyOverflow}>Vacía</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+      case 'configuration':
+        return (
+          <div className={styles.operationContent}>
+            <h3>Configuración de la Tabla Hash</h3>
+            <div className={styles.configurationSection}>
+              <div className={styles.inputGroup}>
+                <label>Cantidad de Buckets:</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={bucketCount}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value);
+                    if (!isNaN(value) && value >= 1 && value <= 100) {
+                      setBucketCount(value);
+                    }
+                  }}
+                  className={styles.configurationInput}
+                />
+              </div>
+              <div className={styles.inputGroup}>
+                <label>Capacidad por Bucket:</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={bucketCapacity}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value);
+                    if (!isNaN(value) && value >= 1 && value <= 20) {
+                      setBucketCapacity(value);
+                    }
+                  }}
+                  className={styles.configurationInput}
+                />
+              </div>
+              <div className={styles.inputGroup}>
+                <label>Método de Resolución de Colisiones:</label>
+                <select
+                  value={selectedMethod}
+                  onChange={(e) => setSelectedMethod(e.target.value as CollisionStrategy)}
+                  className={styles.configurationInput}
+                >
+                  <option value={CollisionStrategy.LINEAR_PROBING}>Saturación Progresiva</option>
+                  <option value={CollisionStrategy.CHAINED_LINEAR}>Saturación Progresiva Encadenada</option>
+                  <option value={CollisionStrategy.DOUBLE_HASHING}>Doble Dispersión</option>
+                  <option value={CollisionStrategy.SEPARATE_OVERFLOW}>Área de Desborde Separada</option>
+                </select>
+              </div>
+                             <div className={styles.configurationActions}>
+                 <button onClick={handleConfigurationChange} className={styles.configurationButton}>
+                   Configurar
+                 </button>
+                 <button onClick={handleResetConfiguration} className={styles.resetButton}>
+                   Restablecer
+                 </button>
+                 <button onClick={handleClear} className={styles.clearConfigButton}>
+                   Limpiar Tabla
+                 </button>
+               </div>
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
   };
 
   const buckets = generateBuckets();
 
   return (
-    <div className={styles.advancedHashTableVisualizer}>
-      <h1>🔬 Visualizador Avanzado de Hash Table</h1>
+    <div className={styles.container}>
+      <h1>Visualizador de Tabla Hash Avanzada</h1>
       
       {/* Mensaje de estado */}
       {message && (
@@ -279,152 +789,60 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
         </div>
       )}
 
-      {/* Panel de control */}
-      <div className={styles.controlPanel}>
+      {/* Panel de operaciones */}
+      <div className={styles.operationsPanel}>
+        <div className={styles.operationTabs}>
+          <button
+            className={`${styles.tab} ${selectedOperation === 'insert' ? styles.active : ''}`}
+            onClick={() => setSelectedOperation('insert')}
+          >
+            Insertar
+          </button>
+          <button
+            className={`${styles.tab} ${selectedOperation === 'search' ? styles.active : ''}`}
+            onClick={() => setSelectedOperation('search')}
+          >
+            Buscar
+          </button>
+          <button
+            className={`${styles.tab} ${selectedOperation === 'delete' ? styles.active : ''}`}
+            onClick={() => setSelectedOperation('delete')}
+          >
+            Eliminar
+          </button>
+          <button
+            className={`${styles.tab} ${selectedOperation === 'hash-analysis' ? styles.active : ''}`}
+            onClick={() => setSelectedOperation('hash-analysis')}
+          >
+            Análisis Hash
+          </button>
+          <button
+            className={`${styles.tab} ${selectedOperation === 'force-collision' ? styles.active : ''}`}
+            onClick={() => setSelectedOperation('force-collision')}
+          >
+            Forzar Colisión
+          </button>
+          <button
+            className={`${styles.tab} ${selectedOperation === 'debug-info' ? styles.active : ''}`}
+            onClick={() => setSelectedOperation('debug-info')}
+          >
+            Debug Info
+          </button>
+          <button
+            className={`${styles.tab} ${selectedOperation === 'configuration' ? styles.active : ''}`}
+            onClick={() => setSelectedOperation('configuration')}
+          >
+            Configuración
+          </button>
+        </div>
         
-        {/* Selector de método */}
-        <div className={styles.methodSelector}>
-          <h3>🎯 Método de Resolución de Colisiones</h3>
-          <div className={styles.methodButtons}>
-            {Object.values(CollisionResolutionMethod).map((method) => (
-              <button
-                key={method}
-                className={`${styles.methodButton} ${selectedMethod === method ? styles.active : ''}`}
-                onClick={() => handleMethodChange(method)}
-              >
-                {getMethodDisplayName(method)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Panel de operaciones */}
-        <div className={styles.operationsPanel}>
-          <div className={styles.operationSection}>
-            <h3>📝 Insertar Elemento</h3>
-            <div className={styles.inputGroup}>
-              <input
-                type="text"
-                placeholder="Clave"
-                value={keyInput}
-                onChange={(e) => setKeyInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleInsert()}
-              />
-              <input
-                type="text"
-                placeholder="Valor"
-                value={valueInput}
-                onChange={(e) => setValueInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleInsert()}
-              />
-              <button onClick={handleInsert} className={styles.insertButton}>
-                Insertar
-              </button>
-            </div>
-          </div>
-
-          <div className={styles.operationSection}>
-            <h3>🔍 Buscar Elemento</h3>
-            <div className={styles.inputGroup}>
-              <input
-                type="text"
-                placeholder="Clave a buscar"
-                value={searchKey}
-                onChange={(e) => setSearchKey(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-              />
-              <button onClick={handleSearch} className={styles.searchButton}>
-                Buscar
-              </button>
-            </div>
-            {searchResult !== undefined && (
-              <div className={styles.searchResult}>
-                Resultado: {searchResult !== undefined ? searchResult : 'No encontrado'}
-              </div>
-            )}
-          </div>
-
-          <div className={styles.operationSection}>
-            <h3>🗑️ Eliminar Elemento</h3>
-            <div className={styles.inputGroup}>
-              <input
-                type="text"
-                placeholder="Clave a eliminar"
-                value={deleteKey}
-                onChange={(e) => setDeleteKey(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleDelete()}
-              />
-              <button onClick={handleDelete} className={styles.deleteButton}>
-                Eliminar
-              </button>
-            </div>
-          </div>
-
-          {/* Nuevas secciones de debug */}
-          <div className={styles.operationSection}>
-            <h3>🔬 Análisis de Hash</h3>
-            <div className={styles.inputGroup}>
-              <input
-                type="text"
-                placeholder="Clave para analizar hash"
-                value={hashKey}
-                onChange={(e) => setHashKey(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleGetHashInfo()}
-              />
-              <button onClick={handleGetHashInfo} className={styles.debugButton}>
-                Analizar Hash
-              </button>
-            </div>
-          </div>
-
-          <div className={styles.operationSection}>
-            <h3>💥 Forzar Colisión</h3>
-            <div className={styles.inputGroup}>
-              <input
-                type="text"
-                placeholder="Clave 1"
-                value={forceCollisionKey1}
-                onChange={(e) => setForceCollisionKey1(e.target.value)}
-              />
-              <input
-                type="text"
-                placeholder="Clave 2"
-                value={forceCollisionKey2}
-                onChange={(e) => setForceCollisionKey2(e.target.value)}
-              />
-              <button onClick={handleForceCollision} className={styles.debugButton}>
-                Verificar Colisión
-              </button>
-            </div>
-          </div>
-
-          <div className={styles.operationSection}>
-            <h3>🔍 Información de Debug</h3>
-            <div className={styles.inputGroup}>
-              <button 
-                onClick={toggleDebugInfo} 
-                className={`${styles.debugButton} ${showDebugInfo ? styles.active : ''}`}
-              >
-                {showDebugInfo ? 'Ocultar Debug' : 'Mostrar Debug'}
-              </button>
-            </div>
-          </div>
-
-          <div className={styles.operationSection}>
-            <h3>🧹 Utilidades</h3>
-            <div className={styles.utilityButtons}>
-              <button onClick={handleClear} className={styles.clearButton}>
-                Limpiar Tabla
-              </button>
-            </div>
-          </div>
-        </div>
+        {renderOperationContent()}
       </div>
 
       {/* Estadísticas */}
       {stats && (
         <div className={styles.stats}>
-          <h3>📊 Estadísticas</h3>
+          <h3>Estadísticas</h3>
           <div className={styles.statsGrid}>
             <div className={styles.statItem}>
               <span className={styles.statLabel}>Tamaño:</span>
@@ -446,347 +864,60 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
         </div>
       )}
 
-      {/* Visualización de la tabla */}
-      <div className={styles.tableVisualization}>
-        <h3>📋 Estructura de la Tabla Hash</h3>
-        
-        {/* Visualización especial para Hash Extensible */}
-        {selectedMethod === CollisionResolutionMethod.EXTENDIBLE_HASH && (
-          <div className={styles.extendibleVisualization}>
-            <div className={styles.directorySection}>
-              <h4>📁 Directorio</h4>
-              <div className={styles.directoryVisual}>
-                {debugInfo?.directory ? (
-                  debugInfo.directory.map((entry, index) => (
-                    <div key={index} className={styles.directoryItem}>
-                      <span className={styles.directoryIndex}>Dir[{index}]</span>
-                      <span className={styles.directoryArrow}>→</span>
-                      <span className={styles.directoryBucket}>Bucket {(entry as any).bucketIndex}</span>
+      {/* Visualización de buckets */}
+      <div className={styles.bucketsContainer}>
+        <h3>Visualización de Buckets</h3>
+        <div className={styles.bucketsGrid}>
+          {buckets.map((bucket) => (
+            <div key={bucket.index} className={styles.bucket}>
+              <div className={styles.bucketHeader}>
+                <span className={styles.bucketIndex}>Bucket {bucket.index}</span>
+                <span className={styles.bucketCount}>
+                  {bucket.items.length}/{bucketCapacity}
+                </span>
+              </div>
+              
+              <div className={styles.bucketItems}>
+                {bucket.items.length === 0 ? (
+                  <div className={styles.emptyBucket}>Vacío</div>
+                ) : (
+                  bucket.items.map((item, index) => (
+                    <div key={index} className={styles.bucketItem}>
+                      <span className={styles.itemKey}>{item.key}</span>
+                      <span className={styles.itemValue}>{item.value}</span>
+                      {item.deleted && <span className={styles.deletedMark}>[BORRADO]</span>}
+                      {item.next !== undefined && item.next !== -1 && (
+                        <span className={styles.nextPointer}>→ {item.next}</span>
+                      )}
                     </div>
                   ))
-                ) : (
-                  <div className={styles.directoryItem}>
-                    <span className={styles.directoryIndex}>Directorio no disponible</span>
-                  </div>
                 )}
               </div>
-              {debugInfo?.globalDepth && (
-                <div className={styles.globalDepthInfo}>
-                  <span>Profundidad Global: {debugInfo.globalDepth}</span>
-                </div>
-              )}
+              
+                             {bucket.overflowItems && bucket.overflowItems.length > 0 && (
+                 <div className={styles.overflowChain}>
+                   <div className={styles.overflowHeader}>🚨 Desborde:</div>
+                   {bucket.overflowItems.map((item, index) => (
+                     <div key={index} className={styles.overflowItem}>
+                       <span className={styles.itemKey}>{item.key}</span>
+                       <span className={styles.itemValue}>{item.value}</span>
+                       {item.deleted && <span className={styles.deletedMark}>[BORRADO]</span>}
+                     </div>
+                   ))}
+                 </div>
+               )}
+               
+               {/* Referencia visual al área de desborde cuando se usa SEPARATE_OVERFLOW */}
+               {selectedMethod === CollisionStrategy.SEPARATE_OVERFLOW && 
+                bucket.overflowItems && bucket.overflowItems.length > 0 && (
+                 <div className={styles.overflowReference}></div>
+               )}
             </div>
-            
-            <div className={styles.bucketsContainer}>
-              {buckets.map((bucket) => (
-                <div key={bucket.index} className={`${styles.bucket} ${styles.extendibleBucket}`}>
-                  <div className={styles.bucketHeader}>
-                    <span>Bucket {bucket.index}</span>
-                    <span className={styles.bucketSize}>
-                      ({bucket.items.length} elementos)
-                    </span>
-                  </div>
-                  <div className={styles.bucketContent}>
-                    {bucket.items.length === 0 ? (
-                      <div className={styles.emptyBucket}>Vacío</div>
-                    ) : (
-                      bucket.items.map((item, index) => (
-                        <div key={index} className={styles.bucketItem}>
-                          <span className={styles.itemKey}>{item.key}</span>
-                          <span className={styles.itemValue}>{item.value}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Visualización estándar para otros métodos */}
-        {selectedMethod !== CollisionResolutionMethod.EXTENDIBLE_HASH && (
-          <div className={styles.bucketsContainer}>
-            {buckets.map((bucket) => (
-              <div key={bucket.index} className={styles.bucket}>
-                <div className={styles.bucketHeader}>
-                  Bucket {bucket.index}
-                  <span className={styles.bucketSize}>
-                    ({bucket.items.length} elementos)
-                  </span>
-                </div>
-                <div className={styles.bucketContent}>
-                  {bucket.items.length === 0 ? (
-                    <div className={styles.emptyBucket}>Vacío</div>
-                  ) : (
-                    bucket.items.map((item, index) => (
-                      <div key={index} className={styles.bucketItem}>
-                        <span className={styles.itemKey}>{item.key}</span>
-                        <span className={styles.itemValue}>{item.value}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-                {bucket.overflowChain && bucket.overflowChain.items.length > 0 && (
-                  <div className={styles.overflowChain}>
-                    <div className={styles.overflowHeader}>Desborde:</div>
-                    {bucket.overflowChain.items.map((item, index) => (
-                      <div key={index} className={styles.overflowItem}>
-                        <span className={styles.itemKey}>{item.key}</span>
-                        <span className={styles.itemValue}>{item.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Área de Desborde por Separado */}
-      {selectedMethod === CollisionResolutionMethod.SEPARATE_OVERFLOW && debugInfo && debugInfo.overflowArea.length > 0 && (
-        <div className={styles.separateOverflowArea}>
-          <h3>🚨 Área de Desborde por Separado</h3>
-          <div className={styles.overflowAreaContainer}>
-            <div className={styles.overflowAreaHeader}>
-              <span>Elementos en Área de Desborde: {debugInfo.overflowArea.length}</span>
-            </div>
-            <div className={styles.overflowAreaGrid}>
-              {debugInfo.overflowArea.map((entry, index) => (
-                <div key={index} className={styles.overflowAreaItem}>
-                  <div className={styles.overflowItemHeader}>
-                    <span className={styles.overflowItemIndex}>#{index + 1}</span>
-                  </div>
-                  <div className={styles.overflowItemContent}>
-                    <span className={styles.itemKey}>{entry.key}</span>
-                    <span className={styles.itemValue}>{entry.value}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Visualización especial para Hash Asistido por Tabla */}
-      {selectedMethod === CollisionResolutionMethod.TABLE_ASSISTED_HASH && debugInfo && (
-        <div className={styles.tableAssistedVisualization}>
-          <h3>🔧 Hash Asistido por Tabla</h3>
-          <div className={styles.hashTableInfo}>
-            <div className={styles.hashFunctionsSection}>
-              <h4>📊 Funciones Hash</h4>
-              <div className={styles.hashFunctionsGrid}>
-                <div className={styles.hashFunctionCard}>
-                  <h5>Hash Primario</h5>
-                  <p>h₁(k) = hash(k) % capacity</p>
-                  <p>Se usa para la distribución inicial</p>
-                </div>
-                <div className={styles.hashFunctionCard}>
-                  <h5>Hash Secundario</h5>
-                  <p>h₂(k) = hash2(k) % (capacity - 1) + 1</p>
-                  <p>Se usa para calcular incrementos</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className={styles.probeSequenceSection}>
-              <h4>🔍 Secuencia de Sondeo</h4>
-              <div className={styles.probeSequenceInfo}>
-                <p>Cuando hay colisión, se usa: (h₁(k) + i × h₂(k)) % capacity</p>
-                <div className={styles.probeSequenceExample}>
-                  <span>Ejemplo: Si h₁("clave") = 3 y h₂("clave") = 2</span>
-                  <div className={styles.probeSteps}>
-                    <span>Paso 0: (3 + 0 × 2) % 8 = 3</span>
-                    <span>Paso 1: (3 + 1 × 2) % 8 = 5</span>
-                    <span>Paso 2: (3 + 2 × 2) % 8 = 7</span>
-                    <span>Paso 3: (3 + 3 × 2) % 8 = 1</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Información del método */}
-      <div className={styles.methodInfo}>
-        <h3>ℹ️ Información del Método</h3>
-        <div className={styles.methodDescription}>
-          {selectedMethod === CollisionResolutionMethod.CHAINING && (
-            <p>
-              <strong>Encadenamiento:</strong> Las colisiones se resuelven creando una lista enlazada 
-              de elementos en cada bucket. Ventajas: simple, eficiente para cargas altas. 
-              Desventajas: uso de memoria adicional.
-            </p>
-          )}
-          {selectedMethod === CollisionResolutionMethod.LINEAR_PROBING && (
-            <p>
-              <strong>Saturación Progresiva:</strong> Cuando hay una colisión, se busca la siguiente 
-              posición disponible en la tabla. Ventajas: uso eficiente de memoria. 
-              Desventajas: puede generar agrupación primaria.
-            </p>
-          )}
-          {selectedMethod === CollisionResolutionMethod.CHAINED_LINEAR_PROBING && (
-            <p>
-              <strong>Saturación Progresiva Encadenada:</strong> Combina saturación progresiva con 
-              encadenamiento para buckets llenos. Ventajas: balance entre memoria y rendimiento. 
-              Desventajas: complejidad adicional.
-            </p>
-          )}
-          {selectedMethod === CollisionResolutionMethod.SEPARATE_OVERFLOW && (
-            <p>
-              <strong>Área de Desborde por Separado:</strong> Los elementos que no caben en los 
-              buckets principales se almacenan en un área de desborde separada. Ventajas: 
-              organización clara. Desventajas: acceso adicional a memoria.
-            </p>
-          )}
-          {selectedMethod === CollisionResolutionMethod.TABLE_ASSISTED_HASH && (
-            <p>
-              <strong>Hash Asistido por Tabla:</strong> Utiliza una función hash secundaria para 
-              calcular el incremento en caso de colisión. Ventajas: reduce la agrupación. 
-              Desventajas: más cálculos por operación.
-            </p>
-          )}
-          {selectedMethod === CollisionResolutionMethod.EXTENDIBLE_HASH && (
-            <p>
-              <strong>Hash Extensible:</strong> Utiliza un directorio que apunta a buckets, 
-              permitiendo división dinámica. Ventajas: adaptación automática al tamaño. 
-              Desventajas: complejidad de implementación.
-            </p>
-          )}
+          ))}
         </div>
       </div>
 
-      {/* Información de Hash */}
-      {showHashInfo && hashInfo && (
-        <div className={styles.hashInfo}>
-          <h3>🔬 Información de Hash</h3>
-          <div className={styles.hashInfoGrid}>
-            <div className={styles.hashInfoItem}>
-              <span className={styles.hashLabel}>Hash Primario:</span>
-              <span className={styles.hashValue}>{hashInfo.primaryHash}</span>
-            </div>
-            {hashInfo.secondaryHash && (
-              <div className={styles.hashInfoItem}>
-                <span className={styles.hashLabel}>Hash Secundario:</span>
-                <span className={styles.hashValue}>{hashInfo.secondaryHash}</span>
-              </div>
-            )}
-            <div className={styles.hashInfoItem}>
-              <span className={styles.hashLabel}>Índice del Bucket:</span>
-              <span className={styles.hashValue}>{hashInfo.bucketIndex}</span>
-            </div>
-            <div className={styles.hashInfoItem}>
-              <span className={styles.hashLabel}>Secuencia de Sondeo:</span>
-              <div className={styles.probeSequence}>
-                {hashInfo.probeSequence.slice(0, 10).map((index, i) => (
-                  <span key={i} className={styles.probeIndex}>{index}</span>
-                ))}
-                {hashInfo.probeSequence.length > 10 && (
-                  <span className={styles.probeMore}>...</span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Información de Debug */}
-      {showDebugInfo && debugInfo && (
-        <div className={styles.debugInfo}>
-          <h3>🔍 Información de Debug</h3>
-          
-          {/* Información específica del método */}
-          {debugInfo.method === CollisionResolutionMethod.TABLE_ASSISTED_HASH && (
-            <div className={styles.methodSpecificInfo}>
-              <h4>📊 Hash Asistido por Tabla</h4>
-              <div className={styles.hashTableInfo}>
-                <p>Este método utiliza dos funciones hash para reducir la agrupación:</p>
-                <ul>
-                  <li>Hash primario: para la distribución inicial</li>
-                  <li>Hash secundario: para calcular el incremento en colisiones</li>
-                </ul>
-              </div>
-            </div>
-          )}
-
-          {debugInfo.method === CollisionResolutionMethod.EXTENDIBLE_HASH && (
-            <div className={styles.methodSpecificInfo}>
-              <h4>📊 Hash Extensible</h4>
-              <div className={styles.extendibleInfo}>
-                <p>Profundidad Global: {debugInfo.globalDepth}</p>
-                <div className={styles.directoryInfo}>
-                  <h5>Directorio:</h5>
-                  <div className={styles.directoryGrid}>
-                                         {debugInfo.directory?.map((entry, index) => (
-                       <div key={index} className={styles.directoryEntry}>
-                         <span>Dir[{index}]: Bucket {(entry as any).bucketIndex}</span>
-                       </div>
-                     ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Información de buckets con detalles */}
-          <div className={styles.bucketsDebug}>
-            <h4>📋 Detalles de Buckets</h4>
-            <div className={styles.bucketsDebugGrid}>
-              {debugInfo.buckets.map((bucket) => (
-                <div key={bucket.index} className={styles.bucketDebug}>
-                  <div className={styles.bucketDebugHeader}>
-                    Bucket {bucket.index}
-                    <span className={styles.bucketDebugSize}>
-                      ({bucket.entries.length} elementos)
-                    </span>
-                  </div>
-                  <div className={styles.bucketDebugContent}>
-                    {bucket.entries.map((entry, index) => (
-                      <div key={index} className={styles.debugEntry}>
-                        <span className={styles.debugKey}>{entry.key}</span>
-                        <span className={styles.debugValue}>{entry.value}</span>
-                        {entry.probeCount && (
-                          <span className={styles.probeCount}>
-                            Sondeos: {entry.probeCount}
-                          </span>
-                        )}
-                        {entry.hashValue && (
-                          <span className={styles.hashValue}>
-                            Hash: {entry.hashValue}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  {bucket.probeInfo && (
-                    <div className={styles.probeInfo}>
-                      <span>Total sondeos: {bucket.probeInfo.totalProbes}</span>
-                      <span>Máx sondeos: {bucket.probeInfo.maxProbes}</span>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Área de desborde */}
-          {debugInfo.overflowArea.length > 0 && (
-            <div className={styles.overflowAreaDebug}>
-              <h4>🚨 Área de Desborde</h4>
-              <div className={styles.overflowAreaContent}>
-                {debugInfo.overflowArea.map((entry, index) => (
-                  <div key={index} className={styles.overflowEntry}>
-                    <span className={styles.debugKey}>{entry.key}</span>
-                    <span className={styles.debugValue}>{entry.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      
     </div>
   );
 } 
