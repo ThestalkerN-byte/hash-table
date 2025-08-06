@@ -5,13 +5,6 @@ import styles from './AdvancedHashTableVisualizer.module.css';
 import { StaticHashTable, CollisionStrategy } from '../MyHashTable';
 
 // Interfaces para la nueva implementación
-interface HashEntry {
-  key: string;
-  value: string;
-  deleted?: boolean;
-  next?: number;
-}
-
 interface AdvancedHashTableVisualizerProps {
   initialCapacity?: number;
 }
@@ -124,7 +117,6 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
     const dump = hashTable.dump() as DebugInfo;
     const totalEntries = dump.buckets.reduce((sum: number, bucket: Array<{ deleted?: boolean }>) =>
       sum + bucket.filter((entry: { deleted?: boolean }) => !entry.deleted).length, 0);
-    const overflowEntries = dump.overflow.filter((entry: { deleted?: boolean } | null) => entry && !entry.deleted).length;
 
     setStats({
       size: totalEntries,
@@ -193,7 +185,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
   };
 
   // Función para obtener el índice del bucket para visualización
-  const getBucketIndexForVisualization = (key: string): number => {
+  const _getBucketIndexForVisualization = (key: string): number => {
     const keyString = String(key);
     const hash = simpleHash(keyString);
     return hash % (hashTable.dump() as DebugInfo).numBuckets;
@@ -259,7 +251,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
     showMessage('Tabla hash limpiada', 'info');
   };
 
-  const handleMethodChange = (method: CollisionStrategy) => {
+  const _handleMethodChange = (method: CollisionStrategy) => {
     console.log(`[METHOD] Cambiando método de ${selectedMethod} a ${method}`);
     console.log(`[METHOD] Creando nueva tabla hash con numBuckets: ${bucketCount}, bucketCapacity: ${bucketCapacity}`);
 
@@ -374,7 +366,7 @@ export default function AdvancedHashTableVisualizer({ initialCapacity = 8 }: Adv
     }
 
     // Función hash modificada que siempre devuelve el mismo índice para forzar colisiones
-    const forcedHash = (key: string): number => {
+    const forcedHash = (_key: string): number => {
       // Siempre devuelve el índice 0 para forzar que todas las claves vayan al mismo bucket
       return 0;
     };
