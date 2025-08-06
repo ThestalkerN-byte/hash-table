@@ -1,6 +1,7 @@
 # Tabla Hash Estática - Implementación en TypeScript
 
 ##  Descripción
+Origen con intereses facultativos para la carrera Análista de sistemas. 
 
 Esta implementación proporciona una **tabla hash estática** con múltiples estrategias de resolución de colisiones. La tabla tiene un tamaño fijo y no se redimensiona dinámicamente, lo que la hace ideal para aplicaciones con restricciones de memoria o donde se requiere un comportamiento predecible.
 
