@@ -32,7 +32,9 @@ Esta implementación proporciona una **tabla hash estática** con múltiples est
 ### 3. DOUBLE_HASHING (Doble Dispersión)
 - **Descripción**: Usa una segunda función hash para calcular el desplazamiento
 - **Ventajas**: Distribución muy uniforme, evita agrupamiento
-- **Desventajas**: Requiere función hash secundaria, mayor overhead
+- **Desventajas**: 
+  - Requiere función hash secundaria
+  - **Mayor overhead**: Cada operación (inserción, búsqueda, eliminación) debe calcular dos funciones hash en lugar de una, lo que incrementa el tiempo de procesamiento. Además, la lógica de doble hashing es más compleja que las estrategias lineales, requiriendo más instrucciones de CPU por operación.
 - **Uso**: Excelente para tablas con alta densidad y rendimiento crítico
 
 ### 4. SEPARATE_OVERFLOW (Área de Desbordes Separada)
